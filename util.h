@@ -140,8 +140,15 @@ string parseRDATA(const char* buffer, int& offset, uint16_t type, uint16_t rclas
                                 to_string((ipv4Address >> 8) & 0xFF) + "." +
                                 to_string(ipv4Address & 0xFF);
         rdata = ipAddress;
-    } else {
-        cout << "Unsupported RDATA type or class" << endl;
+        offset += rdlength;
+    }
+    else if(type == 2 && rclass == 1){
+        string nsdomain = parseDomainNames(buffer, offset);
+        rdata = nsdomain;
+    }
+    else {
+        // cerr << "Unsupported RDATA type or class" << endl;
+        offset += rdlength;
     }
     return rdata;
 }
