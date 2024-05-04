@@ -17,6 +17,23 @@
 using namespace std;
 constexpr int MAX_BUFFER_SIZE = 5000;
 
+const string ROOT_NS[13] = {
+    "198.41.0.4",
+    "170.247.170.2",
+    "192.33.4.12",
+    "199.7.91.13",
+    "192.203.230.10",
+    "192.5.5.241",
+    "192.112.36.4",
+    "198.97.190.53",
+    "192.36.148.17",
+    "192.58.128.30",
+    "193.0.14.129",
+    "199.7.83.42",
+    "202.12.27.33"
+};
+
+
 Header parseDNSHeader(const char* buffer) {
     uint16_t id = ntohs(*reinterpret_cast<const uint16_t*>(buffer));
     uint16_t flags = ntohs(*reinterpret_cast<const uint16_t*>(buffer + 2));
@@ -40,12 +57,16 @@ ResourceRecord parseResourceRecord(const char* buffer, int& offset) {
     offset += 2;
     string rdata = parseRDATA(buffer, offset, type, rclass, rdlength);
     ResourceRecord rr(name, type, rclass, ttl, rdlength, rdata);
+    cout<<rr.repr()<<endl;
     return rr;
 }
 
 pair<string, bool> parseDNSMessage(const char* buffer, int length) {
     Header rheader = parseDNSHeader(buffer);
 
+    Flags flags(rheader.flags);
+
+    cout << "Respone Flags: "<< flags.repr()<<endl;
     int offset = sizeof(Header);
 
     for (int i = 0; i < rheader.qdcount; ++i) {
@@ -83,7 +104,8 @@ pair<string, bool> parseDNSMessage(const char* buffer, int length) {
             }
             else{
                 for(auto r: additional){
-                    if(r.rdata.length() > 0) return {r.rdata, false};
+                    // Only return if ipv4
+                    if(r.rdata.length() > 0 && r.type == 1) return {r.rdata, false};
                 }
             }
 
@@ -97,25 +119,29 @@ pair<string, bool> parseDNSMessage(const char* buffer, int length) {
 
 string generateDNSMessage(string domain){
     // hardcoding ID to check the response for testing
-    Header h(22, (1<<8), 1, 0, 0, 0);
+    Header h(22, 0, 1, 0, 0, 0);
     Question q(domain, 1, 1);
-    string header_hex = toHex(h.to_binary());
-    string question_hex = toHex(q.to_binary());
-    return hexToBytes(header_hex + question_hex);
+    cout<<q.repr()<<endl;
+    string hex_dns = toHex(h.to_binary() + q.to_binary());
+    cout<<hex_dns<<endl;
+    return hexToBytes(hex_dns);
 }
 
 char* queryServer(string domain, const char* server_ip){
     string dns_message = generateDNSMessage(domain);
-    // Send query to DNS server
-    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+
+    // Create socket (File descriptor) with Protocol Family Interent and SOCK_DGRAM type
+    int sockfd = socket(PF_INET, SOCK_DGRAM, 0);
     if (sockfd == -1) {
         cerr << "Error creating socket" << endl;
         throw runtime_error("Error creating socket");
     }
+    // Create socket address
+    // We are using sockaddr_in instead of sockaddr as we don't want to deal with sa_data, both can be type casted to each other.
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(53);
+    server_addr.sin_family = AF_INET; // Address Family Interent
+    server_addr.sin_port = htons(53); // Host to Network byte order short
     server_addr.sin_addr.s_addr = inet_addr(server_ip);
 
     ssize_t bytes_sent = sendto(sockfd, dns_message.data(), dns_message.size(), 0,
@@ -143,7 +169,7 @@ char* queryServer(string domain, const char* server_ip){
 
 int main(int argc, char *argv[]){
     string domain = "dns.google.com";
-    pair<string, bool> result = {"198.41.0.4", false};
+    pair<string, bool> result = {ROOT_NS[0], false};
     while(!result.second){
         cout<<"Querying: "<<result.first<<" for: "<<domain<<endl;
         char* buffer = queryServer(domain, result.first.c_str());

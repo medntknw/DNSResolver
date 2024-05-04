@@ -131,21 +131,40 @@ string parseDomainNames(const char* buffer, int& offset) {
 }
 
 string parseRDATA(const char* buffer, int& offset, uint16_t type, uint16_t rclass, uint16_t rdlength) {
-    // 0xFF -> 11111111
     string rdata = "";
+    // rclass = 1 = Internet
+    // type = 1 = A = Ipv4 host address
     if (type == 1 && rclass == 1 && rdlength == 4) {
-        uint32_t ipv4Address = ntohl(*reinterpret_cast<const uint32_t*>(buffer + offset));
-        string ipAddress = to_string((ipv4Address >> 24) & 0xFF) + "." +
-                                to_string((ipv4Address >> 16) & 0xFF) + "." +
-                                to_string((ipv4Address >> 8) & 0xFF) + "." +
-                                to_string(ipv4Address & 0xFF);
-        rdata = ipAddress;
+        char ipv4Address[4];
+        memcpy(ipv4Address, buffer + offset, 4);
+        struct in_addr addr;
+        memcpy(&addr, ipv4Address, 4);
+        char ipStr[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &addr, ipStr, INET_ADDRSTRLEN);
+        rdata = ipStr;
         offset += rdlength;
     }
+    // type = 2 = NS = authoritative NS
     else if(type == 2 && rclass == 1){
         string nsdomain = parseDomainNames(buffer, offset);
         rdata = nsdomain;
     }
+    // type = 28 = AAAA = Ipv6 host address
+    else if(type == 28 && rclass == 1 && rdlength == 16){
+        char ipv6Address[16];
+        memcpy(ipv6Address, buffer + offset, 16);
+
+        // Convert network byte order to host byte order
+        struct in6_addr addr;
+        memcpy(&addr, ipv6Address, 16);
+
+        char ipStr[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &addr, ipStr, INET6_ADDRSTRLEN);
+        rdata = ipStr;
+        offset += rdlength;
+
+    }
+    // type = 5 = CNAME = canonical name for an alias
     else {
         // cerr << "Unsupported RDATA type or class" << endl;
         offset += rdlength;
