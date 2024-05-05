@@ -140,6 +140,10 @@ string parseRDATA(const char* buffer, int& offset, uint16_t type, uint16_t rclas
 
     }
     // type = 5 = CNAME = canonical name for an alias
+    else if(type == 5 && rclass == 1){
+        string cname = parseDomainNames(buffer, offset);
+        rdata = cname;
+    }
     else {
         // cerr << "Unsupported RDATA type or class" << endl;
         offset += rdlength;
