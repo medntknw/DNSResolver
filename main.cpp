@@ -57,16 +57,14 @@ ResourceRecord parseResourceRecord(const char* buffer, int& offset) {
     offset += 2;
     string rdata = parseRDATA(buffer, offset, type, rclass, rdlength);
     ResourceRecord rr(name, type, rclass, ttl, rdlength, rdata);
-    cout<<rr.repr()<<endl;
     return rr;
 }
 
-pair<string, bool> parseDNSMessage(const char* buffer, int length) {
+DNSMessage parseDNSMessage(const char* buffer, int length) {
     Header rheader = parseDNSHeader(buffer);
 
     Flags flags(rheader.flags);
 
-    cout << "Respone Flags: "<< flags.repr()<<endl;
     int offset = sizeof(Header);
 
     for (int i = 0; i < rheader.qdcount; ++i) {
@@ -89,46 +87,21 @@ pair<string, bool> parseDNSMessage(const char* buffer, int length) {
         // cout<<"Parsing Additional Section: "<<endl;
         additional.push_back(parseResourceRecord(buffer, offset));
     }
-
-    if(answer.size() > 0){
-        return {answer[0].rdata, true};
-    }
-    else{
-        // querying root NS will return TLD domain in response
-        if(authority.size() > 0){
-
-            if(additional.size() <= 0){
-                // additonal section doesn't provide IP for the TLD domain
-                // query root NS to get the IP
-                return {authority[0].rdata, false};
-            }
-            else{
-                for(auto r: additional){
-                    // Only return if ipv4
-                    if(r.rdata.length() > 0 && r.type == 1) return {r.rdata, false};
-                }
-            }
-
-        }
-        else{
-            throw runtime_error("No useful response from server");
-        }
-    }
-    throw runtime_error("No useful response from server");
+    return DNSMessage(rheader, answer, authority, additional);
 }
 
-string generateDNSMessage(string domain){
+string generateDNSMessage(string domain, int qtype){
     // hardcoding ID to check the response for testing
     Header h(22, 0, 1, 0, 0, 0);
-    Question q(domain, 1, 1);
-    cout<<q.repr()<<endl;
+    Question q(domain, qtype, 1);
     string hex_dns = toHex(h.to_binary() + q.to_binary());
-    cout<<hex_dns<<endl;
     return hexToBytes(hex_dns);
 }
 
-char* queryServer(string domain, const char* server_ip){
-    string dns_message = generateDNSMessage(domain);
+char* queryServer(string domain, const char* server_ip, int qtype){
+
+    cout<<"Querying "<<server_ip<<" for "<<domain<<" qtype: "<<qtype<<endl;
+    string dns_message = generateDNSMessage(domain, qtype);
 
     // Create socket (File descriptor) with Protocol Family Interent and SOCK_DGRAM type
     int sockfd = socket(PF_INET, SOCK_DGRAM, 0);
@@ -167,13 +140,70 @@ char* queryServer(string domain, const char* server_ip){
     return buffer;
 }
 
-int main(int argc, char *argv[]){
-    string domain = "dns.google.com";
-    pair<string, bool> result = {ROOT_NS[0], false};
-    while(!result.second){
-        cout<<"Querying: "<<result.first<<" for: "<<domain<<endl;
-        char* buffer = queryServer(domain, result.first.c_str());
-        result = parseDNSMessage(buffer, sizeof(buffer));
+pair<int, string> processDNSMessage(DNSMessage msg){
+    /*
+    {1, x} -> Found the answer 
+    {2, x} -> Found the Authoritative NS IP
+    {3, x} -> Found the Authoritative NS domain
+
+    */
+    string ip = "";
+    string server = "";
+    string ns = "";
+    if(msg.answer.size() > 0){
+        ip = msg.answer[0].rdata;
+        if(ip.length() == 0){
+            cout<<"Not able to process rdata in Answer: "<<msg.answer[0].repr()<<endl;
+        }
     }
-    cout<<"IP for domain: "<<domain<<" = "<<result.first<<endl;
+    else{
+        if(msg.authority.size() > 0){
+            if(msg.additional.size() > 0){
+                server = msg.additional[0].rdata;
+                if(server.length() == 0){
+                    cout<<"Not able to process rdata in Additional: "<<msg.additional[0].repr()<<endl;
+                }
+            }
+            else{
+                ns = msg.authority[0].rdata;
+                if(ns.length() == 0){
+                    cout<<"Not able to process rdata in Authority: "<<msg.authority[0].repr()<<endl;
+                }
+            }
+        }
+    }
+    if(ip.length() > 0) return {1, ip};
+    if(server.length() > 0) return {2, server};
+    if(ns.length() > 0) return {3, ns};
+    cout<<"Receieved error from the server: "<< msg.header.repr()<<endl<<Flags(msg.header.flags).repr()<<endl;
+    throw logic_error("Not able to process DNS Message!");
+}
+
+string resolveIp(string domain){
+    string server = ROOT_NS[0];
+    char* buffer = queryServer(domain, server.c_str(), 1);
+    DNSMessage msg = parseDNSMessage(buffer, sizeof(buffer));
+    pair<int, string> res = processDNSMessage(msg);
+    while (true) {
+        if (res.first == 1) {
+            cout << "Resolved IP address: " << res.second << endl;
+            return res.second;
+        } else if (res.first == 2) {
+            cout << "Found Authoritative NS IP in RR: " << res.second << endl;
+            buffer = queryServer(domain, res.second.c_str(), 1);
+            msg = parseDNSMessage(buffer, sizeof(buffer));
+            res = processDNSMessage(msg);
+        } else if (res.first == 3) {
+            cout << "Querying to get the IP address for: " << res.second << endl;
+            server = resolveIp(res.second);
+            buffer = queryServer(domain, server.c_str(), 1);
+            msg = parseDNSMessage(buffer, sizeof(buffer));
+            res = processDNSMessage(msg);
+        }
+    }
+}
+
+int main(int argc, char *argv[]){
+    string domain = "app.eightfold.ai";
+    cout<<resolveIp(domain)<<endl;
 }

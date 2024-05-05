@@ -25,62 +25,37 @@ string toHex(string binary){
     return hexadecimal; 
 }
 
-string asciiToBinary(vector<uint8_t> ascii){
+string toBinary(vector<uint8_t>& input){
     string binary="";
-    for(auto i: ascii){
+    for(auto i: input){
         bitset<8>b(i);
         string bstr = b.to_string();
         binary += bstr;
     }
     return binary;
 }
+vector<uint8_t> encodeDomain(const string& domain) {
+    vector<uint8_t> encoded;
+    string label;
+    size_t pos = 0;
 
-vector<uint8_t> toASCII(string s){
-    vector<uint8_t>ascii;
-    for(int i=0;i<s.length();++i){
-        char c = s[i];
-        uint8_t d = c;
-        if(d>=97){
-            ascii.push_back(d);
+    while (pos < domain.length()) {
+        size_t dotPos = domain.find('.', pos);
+        if (dotPos == string::npos) {
+            label = domain.substr(pos);
+            pos = domain.length();
+        } else {
+            label = domain.substr(pos, dotPos - pos);
+            pos = dotPos + 1;
         }
-        else{
-            int j=i;
-            uint8_t num = 0;
-            while(j<s.length() && (uint8_t)s[j] < 97){
-                num = num*10 + (uint8_t)(s[j]-'0');
-                j++;
-            }
-            ascii.push_back(num);
-            i = j-1;
-        }
-    }
-    return ascii;
-}
 
-string encode(string s){
-    string res = "";
-    queue<char>st;
-    for(char c: s){
-        if(c == '.'){
-            res+=to_string(st.size());
-            while(!st.empty()){
-                res+=st.front();
-                st.pop();
-            }
-        }
-        else{
-            st.push(c);
+        encoded.push_back(static_cast<uint8_t>(label.length()));
+        for (char c : label) {
+            encoded.push_back(static_cast<uint8_t>(c));
         }
     }
-    if(!st.empty()){
-        res+=to_string(st.size());
-        while(!st.empty()){
-            res+=st.front();
-            st.pop();
-        }
-    }
-    res+='0';
-    return res;
+    encoded.push_back(0);
+    return encoded;
 }
 
 string hexToBytes(string hex){

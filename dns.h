@@ -85,6 +85,9 @@ class Header{
         uint16_t ancount;
         uint16_t nscount;
         uint16_t arcount;
+
+        Header (){}
+
         Header(uint16_t _id, uint16_t _flags, uint16_t _qdcount, uint16_t _ancount, uint16_t _nscount, uint16_t _arcount){
             this->id = _id;
             this->flags = _flags;
@@ -122,9 +125,11 @@ class Question{
         string qname;
         uint16_t qtype;
         uint16_t qclass;
-    
+
+        Question(){}
+
         Question(string qname, uint16_t qtype, uint16_t qclass){
-            this->qname = encode(qname);
+            this->qname = qname;
             this->qtype = qtype;
             this->qclass = qclass;
         }
@@ -139,7 +144,8 @@ class Question{
         string to_binary(){
             bitset<16> qtype(this->qtype), qclass(this->qclass);
             string res = "";
-            res += asciiToBinary(toASCII(this->qname));
+            vector<uint8_t> ascii = encodeDomain(this->qname);
+            res += toBinary(ascii);
             res += qtype.to_string();
             res += qclass.to_string();
             return res;
@@ -176,4 +182,25 @@ public:
                 "}";
     }
 
+};
+
+class DNSMessage{
+    public:
+        Header header;
+        Question question;
+        vector<ResourceRecord> answer;
+        vector<ResourceRecord> authority;
+        vector<ResourceRecord> additional;
+
+        DNSMessage(Header h, Question q){
+            this->header = h;
+            this->question = q;
+        }
+
+        DNSMessage(Header h, vector<ResourceRecord> answer, vector<ResourceRecord> authority, vector<ResourceRecord> additional){
+            this->header = h;
+            this->answer = answer;
+            this->authority = authority;
+            this->additional = additional;
+        }
 };
